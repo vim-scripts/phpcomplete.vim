@@ -1,0 +1,46 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=3171
+
+Default phpcomplete.vim does not support in-file checking of $var = new Class; so if you don't have a tags file with the variable in it already you have to hack around it by placing the comment /* @var $yourvar YourClass */ above the line which is really kludgy.
+
+This patch allows for in-file checking so you don't need the comment.
+
+$instance = new Class;
+...
+$instance->Blah(); // <-- complete without comment
+
+It also allows support for singleton instantiations:
+
+$instance = Class::getInstance();
+$instance->completeMe(); // sweet completion
+
+=== Usage ===
+// example class which has a TAGS file generated for it somewhere
+class SomeClass {
+  private function _private_method() {} // never shows up in completion list
+  public static function staticMethod() {} // only shows up when using completion on SomeClass::<C-X><C-O>
+  public function completeMe() {} // only shows up when using completion on $instance_of_someclass-><C-X><C-O>
+}
+
+== Non-static completion ==
+$instance = new SomeClass;
+...
+$instance-><C-X><C-O> to display the omnicompletion menu (see :help ins-completion)
+$instance->completeMe(); // will autoselect completeMe since it's the only public non-static method
+
+== Static completion ==
+SomeClass::<C-X><C-O> to display omnicompletion menu
+SomeClass::staticMethod(); // once again will autoselect staticMethod since it's the only public static method
+
+== Singleton completion ==
+$instance = SomeClass::getInstance();
+$instance-><C-X><C-O> complete just like non-static
+
+
+
+=== Other features ===
+ * Correct restriction of static or standard methods based on context ( show only static methods with :: and only standard with ->)
+ * Real support for self:: and $this-> with the aforementioned context restriction
+ * Constant variable completion (not just define(VARIABLE, 1) but const VARIABLE = 1)
+
+Follow updates:
+http://github.com/shawncplus/phpcomplete.vim
