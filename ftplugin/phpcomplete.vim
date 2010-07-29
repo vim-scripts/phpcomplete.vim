@@ -1,11 +1,10 @@
 " Vim completion script
 " Language:	PHP
 " Maintainer:	Mikolaj Machowski ( mikmach AT wp DOT pl )
-" Last Change:	2006 May 9
+" Maintainer:	Shawn Biddle ( shawn AT shawnbiddle DOT com )
+" Last Change:	2010 July 28
 "
 "   TODO:
-"   - Class aware completion:
-"      a) caching?
 "   - Switching to HTML (XML?) completion (SQL) inside of phpStrings
 "   - allow also for XML completion <- better do html_flavor for HTML
 "     completion
@@ -66,9 +65,7 @@ function! phpcomplete#CompletePHP(findstart, base)
 		call phpcomplete#LoadData()
 	endif
 
-	
 	let scontext = substitute(context, '\$\?[a-zA-Z_\x7f-\xff][a-zA-Z_0-9\x7f-\xff]*$', '', '')
-
 
 	if scontext =~ '\(=\s*new\|extends\)\s\+$'
 		" Complete class name
@@ -136,8 +133,7 @@ function! phpcomplete#CompletePHP(findstart, base)
 		" few not so subtle differences as not appending of $ and addition
 		" of 'kind' tag (not necessary in regular completion)
 
-
-		if (scontext =~ '->$' || scontext =~ '::') && scontext !~ '\$this->$'
+		if scontext =~ '->$' || scontext =~ '::' " && scontext !~ '\$this->$'
 
 			" Get name of the class
 			let classname = phpcomplete#GetClassName(scontext)
@@ -198,7 +194,6 @@ function! phpcomplete#CompletePHP(findstart, base)
 				" public
 				let variables = filter(deepcopy(sccontent),
 						\ 'v:val =~ "^\\s*\\(public\\|var\\)\\s\\+\\$"')
-
 				let jvars = join(variables, ' ')
 				let svars = split(jvars, '\$')
 				let c_variables = {}
@@ -225,7 +220,6 @@ function! phpcomplete#CompletePHP(findstart, base)
 						let c_constants[c_con] = ''
 					endif
 				endfor
-
 
 				let all_values = {}
 				call extend(all_values, c_functions)
@@ -595,73 +589,83 @@ function! phpcomplete#GetClassName(scontext) " {{{
 	" line above
 	" or line in tags file
 
-	let object = matchstr(a:scontext, '\zs[a-zA-Z_0-9\x7f-\xff]\+\ze->')
+	if a:scontext =~ '\$this->'
+		let i = 1
+		while i < line('.')
+			let line = getline(line('.')-i)
+			if line !~ '^class'
+				let i += 1
+				continue
+			else
+				let classname = matchstr(line, '^class \zs[a-zA-Z]\w\+\ze\(\s*\|$\)')
+				return classname
+			endif
+		endwhile
+	else
+		let object = matchstr(a:scontext, '\zs[a-zA-Z_0-9\x7f-\xff]\+\ze->')
+		let i = 1
+		while i < line('.')
+			let line = getline(line('.')-i)
+			if line =~ '^\s*\*\/\?\s*$'
+				let i += 1
+				continue
+			else
+				if line =~ '@var\s\+\$'.object.'\s\+[a-zA-Z_0-9\x7f-\xff]\+'
+					let classname = matchstr(line, '@var\s\+\$'.object.'\s\+\zs[a-zA-Z_0-9\x7f-\xff]\+')
+					return classname
+				else
+					break
+				endif
+			endif
+		endwhile
 
-	let i = 1
-	while i < line('.')
-		let line = getline(line('.')-i)
-		if line =~ '^\s*\*\/\?\s*$'
-			let i += 1
-			continue
-		else
-			if line =~ '@var\s\+\$'.object.'\s\+[a-zA-Z_0-9\x7f-\xff]\+'
-				let classname = matchstr(line, '@var\s\+\$'.object.'\s\+\zs[a-zA-Z_0-9\x7f-\xff]\+')
+		" do in-file lookup of $var = new Class
+		let i = 1
+		while i < line('.')
+			let line = getline(line('.')-i)
+			if line =~ '^\s*\$'.object.'\s*=\s*new\s\+[a-zA-Z_0-9\x7f-\xff]\+'
+
+				let classname = matchstr(line, '\$'.object.'\s*=\s*new \zs[a-zA-Z_0-9\x7f-\xff]\+')
 				return classname
 			else
-				break
+				let i += 1
+				continue
 			endif
+		endwhile
+
+		" do in-file lookup for Class::getInstance()
+		let i = 1
+		while i < line('.')
+			let line = getline(line('.')-i)
+			if line =~ '^\s*\$'.object.'\s*=&\?\s*\s\+[a-zA-Z_0-9\x7f-\xff]\+::getInstance\+'
+
+				let classname = matchstr(line, '\$'.object.'\s*=&\?\s*\zs[a-zA-Z_0-9\x7f-\xff]\+\ze::getInstance\+')
+				return classname
+			else
+				let i += 1
+				continue
+			endif
+		endwhile
+
+		" check Constant lookup
+		let constant_object = matchstr(a:scontext, '\zs[a-zA-Z_0-9\x7f-\xff]\+\ze::')
+		if constant_object != ''
+			return constant_object
 		endif
-	endwhile
 
-	" do in-file lookup of $var = new Class
-	let i = 1
-	while i < line('.')
-		let line = getline(line('.')-i)
-		if line =~ '^\s*\$'.object.'\s*=\s*new\s\+[a-zA-Z_0-9\x7f-\xff]\+'
-
-			let classname = matchstr(line, '\$'.object.'\s*=\s*new \zs[a-zA-Z_0-9\x7f-\xff]\+')
-			return classname
+		" OK, first way failed, now check tags file(s)
+		let fnames = join(map(tagfiles(), 'escape(v:val, " \\#%")'))
+		exe 'silent! vimgrep /^'.object.'.*\$'.object.'.*=\s*new\s\+.*\tv\(\t\|$\)/j '.fnames
+		let qflist = getqflist()
+		if len(qflist) == 0
+			return ''
 		else
-			let i += 1
-			continue
-		endif
-	endwhile
-
-	" do in-file lookup for Class::getInstance()
-	let i = 1
-	while i < line('.')
-		let line = getline(line('.')-i)
-		if line =~ '^\s*\$'.object.'\s*=&\?\s*\s\+[a-zA-Z_0-9\x7f-\xff]\+::getInstance\+'
-
-			let classname = matchstr(line, '\$'.object.'\s*=&\?\s*\zs[a-zA-Z_0-9\x7f-\xff]\+\ze::getInstance\+')
+			" In all properly managed projects it should be one item list, even if it
+			" *is* longer we cannot solve conflicts, assume it is first element
+			let classname = matchstr(qflist[0]['text'], '=\s*new\s\+\zs[a-zA-Z_0-9\x7f-\xff]\+\ze')
 			return classname
-		else
-			let i += 1
-			continue
 		endif
-	endwhile
-
-	" check Constant lookup
-	let constant_object = matchstr(a:scontext, '\zs[a-zA-Z_0-9\x7f-\xff]\+\ze::')
-	if constant_object != ''
-		return constant_object
 	endif
-
-	" OK, first way failed, now check tags file(s)
-	let fnames = join(map(tagfiles(), 'escape(v:val, " \\#%")'))
-	exe 'silent! vimgrep /^'.object.'.*\$'.object.'.*=\s*new\s\+.*\tv\(\t\|$\)/j '.fnames
-	let qflist = getqflist()
-	if len(qflist) == 0
-		return ''
-	else
-		" In all properly managed projects it should be one item list, even if it
-		" *is* longer we cannot solve conflicts, assume it is first element
-		let classname = matchstr(qflist[0]['text'], '=\s*new\s\+\zs[a-zA-Z_0-9\x7f-\xff]\+\ze')
-		return classname
-	endif
-
-	let
-
 endfunction
 " }}}
 function! phpcomplete#GetClassLocation(classname) " {{{
